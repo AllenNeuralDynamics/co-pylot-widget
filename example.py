@@ -41,24 +41,9 @@ stagemap = StageMap(stage_position_um,
                  scanning_volume_um,
                  limits_um,
                  fov_um,
-                 tile_overlap_pct,
-                    r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-holder.STL',
-                    r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-tissue-map.STL')
-# stagemap = StageMap(coordinate_transformation_map)
-# print('1', stagemap.coordinate_transformation_map)
-# #stagemap.coordinate_transformation_map = {'x': 'z', 'y': 'x', 'z': 'y'}
-# print('2', stagemap.stage_position_um)
-# stagemap.stage_position_um['x'] = 80
-# print('3', stagemap.stage_position_um['x'])
-# print('4', stagemap.stage_position_um)
-# stagemap.coordinate_transformation_map = {'x': 'z', 'y': 'x', 'z': '-y'}
-# print('outside', stagemap.scanning_volume_um)
-# print('outside', stagemap.limits_um)
-# print('outside', stagemap.fov_um)
-# print('outside', stagemap.tile_overlap_pct)
-# print(stagemap.stage_position_um)
-# print(stagemap.coordinate_transformation_map, stagemap.stage_position_um, stagemap.fov_um,
-#       stagemap.scanning_volume_um, stagemap.limits_um, stagemap.fov_um, stagemap.tile_overlap_pct)
+                 tile_overlap_pct,)
+                # r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-holder.STL',
+                # r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-tissue-map.STL')
 x = randomwalk1D(stagemap.stage_position_um['x'], 100)
 y = randomwalk1D(stagemap.stage_position_um['y'], 100)
 z = randomwalk1D(stagemap.stage_position_um['z'], 100)
