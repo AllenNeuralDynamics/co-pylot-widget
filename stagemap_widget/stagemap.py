@@ -126,7 +126,6 @@ class StageMap(QWidget):
         tiling_widget.stateChanged.connect(self.set_tiling)  # Display tiling of scan when checked
         return tiling_widget
     def set_tiling(self, state):
-
         """Calculate grid steps and number of tiles for scan volume in config.
         :param state: state of QCheckbox when clicked. State 2 means checkmark is pressed: state 0 unpressed"""
 
@@ -142,9 +141,7 @@ class StageMap(QWidget):
             self.tiles = []
 
     def draw_tiles(self):
-
-        """Draw tiles of proposed scan volume.
-        :param coord: coordinates of bottom corner of volume in sample pose"""
+        """Draw tiles of proposed scan volume"""
 
         # Remove old tiles
         for item in self.tiles:
@@ -185,7 +182,7 @@ class StageMap(QWidget):
         """Create GLViewWidget and upload position, scan area, and cad models into view"""
 
         plot = gl.GLViewWidget()
-        plot.opts['distance'] = 500
+        plot.opts['distance'] = 500 # TODO: Distance should be scaled to scan volume size and size of objectives/mount
         plot.opts['center'] = QtGui.QVector3D(self.stage_position_um['x'],
                                               self.stage_position_um['y'],
                                               self.stage_position_um['z'])
@@ -224,16 +221,17 @@ class StageMap(QWidget):
     @Slot(int)
     def update_map(self, *args):
         """Update map with new values of key values"""
+        shifted_pos = {k: v - (.5 * self.fov_um.get(k, 0)) for k, v in self.stage_position_um.items()}
 
         self.pos.setSize(self.fov_um.get('x', 0), self.fov_um.get('y', 0), self.fov_um.get('z', 0))
-        self.pos.setTransform(qtpy.QtGui.QMatrix4x4(1, 0, 0, self.stage_position_um['x']-(.5*self.fov_um.get('x', 0)),
-                                                    0, 1, 0, self.stage_position_um['y']-(.5*self.fov_um.get('y', 0)),
-                                                    0, 0, 1, self.stage_position_um['z']-(.5*self.fov_um.get('z', 0)),
+        self.pos.setTransform(qtpy.QtGui.QMatrix4x4(1, 0, 0, shifted_pos['x'],
+                                                    0, 1, 0, shifted_pos['y'],
+                                                    0, 0, 1, shifted_pos['z'],
                                                     0, 0, 0, 1))
         self.scan_vol.setSize(**self.scanning_volume_um)
-        self.scan_vol.setTransform(qtpy.QtGui.QMatrix4x4(1, 0, 0, self.stage_position_um['x']-(.5*self.fov_um.get('x', 0)),
-                                                         0, 1, 0, self.stage_position_um['y']-(.5*self.fov_um.get('y', 0)),
-                                                         0, 0, 1, self.stage_position_um['z']-(.5*self.fov_um.get('z', 0)),
+        self.scan_vol.setTransform(qtpy.QtGui.QMatrix4x4(1, 0, 0, shifted_pos['x'],
+                                                         0, 1, 0, shifted_pos['y'],
+                                                         0, 0, 1, shifted_pos['z'],
                                                          0, 0, 0, 1))
         matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
         m = {matrix_transform['x']:(1,0,0),
