@@ -1,4 +1,5 @@
-from copylot_widget.copylot import StageMap
+
+from co_pylot_widget.copylot import CoPylot
 import sys
 from qtpy.QtWidgets import QApplication
 import random
@@ -15,6 +16,7 @@ def randomwalk1D(start_num, n):
     return xposition
 
 def stagewalk(x, y, z):
+
     for i in range(0, 100):
         if i == 25:
             print('changing scanning volume')
@@ -25,6 +27,10 @@ def stagewalk(x, y, z):
         if i ==75:
             print('changing coordinate transform')
             stagemap.coordinate_transformation_map = {'x': 'y', 'y': 'z', 'z': '-x'}
+        if i ==99:
+            print('Removing objectives')
+            stagemap.remove_cad_model('objectives')
+
         stagemap.stage_position_um = {'x':x[i], 'y':y[i], 'z':z[i]}
         sleep(.5)
 
@@ -36,7 +42,7 @@ fov_um = {'x': 20, 'y':20}
 tile_overlap_pct = {'x': 20, 'y':20}
 
 app = QApplication(sys.argv)
-stagemap = StageMap(stage_position_um,
+stagemap = CoPylot(stage_position_um,
                  coordinate_transformation_map,
                  scanning_volume_um,
                  limits_um,

@@ -3,7 +3,7 @@ from qtpy.QtWidgets import QWidget, QVBoxLayout, QCheckBox
 import pyqtgraph.opengl as gl
 import inspect
 from time import time
-from copylot_widget.signalchangevar import SignalChangeVar
+from co_pylot_widget.signalchangevar import SignalChangeVar
 from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
 import qtpy.QtGui
@@ -122,6 +122,7 @@ class CoPylot(QWidget):
         tiling_widget = QCheckBox('See Tiling')
         tiling_widget.stateChanged.connect(self.set_tiling)  # Display tiling of scan when checked
         return tiling_widget
+
     def set_tiling(self, state):
         """Calculate grid steps and number of tiles for scan volume in config.
         :param state: state of QCheckbox when clicked. State 2 means checkmark is pressed: state 0 unpressed"""
@@ -170,9 +171,9 @@ class CoPylot(QWidget):
                     self.tiles.append(box)
                     self.tiles[-1].setColor(qtpy.QtGui.QColor('cornflowerblue'))
                     # Remove and add back cad models to see tiles through models
-                    self.remove_cad_models()
+                    self.remove_models_from_plot()
                     self.plot.addItem(self.tiles[-1])
-                    self.add_cad_models()
+                    self.add_models_to_plot()
 
                     # self.tiles.append(gl.GLTextItem(pos=num_pos, text=str((self.xtiles*y)+x), font=qtpy.QtGui.QFont('Helvetica', 15)))
                     # self.plot.addItem(self.tiles[-1])       # Can't draw text while moving graph
@@ -203,19 +204,19 @@ class CoPylot(QWidget):
                                         shader='edgeHilight', glOptions='translucent')
         self._cad_models[name] = [cad_model, orientation]
 
+        # Create orientation matrix
+        matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
         x, y, z = symbols('x y z')
         orientation = list(orientation)
         for i in range(3, 12, 4):    # Go through coordinates
             if type(orientation[i]) == str:
                 if 'x' in orientation[i] or 'y' in orientation[i] or 'z' in orientation[i]:
                     fun = parse_expr(orientation[i])
-                    value = fun.subs([(x, self.stage_position_um['x']),
-                                      (y, self.stage_position_um['y']),
-                                      (z, self.stage_position_um['z'])])
+                    value = fun.subs([(x, self.stage_position_um[matrix_transform['x']]),
+                                      (y, self.stage_position_um[matrix_transform['y']]),
+                                      (z, self.stage_position_um[matrix_transform['z']])])
                     orientation[i] = value
 
-        # Create orientation matrix
-        matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
         m = {matrix_transform['x']: (orientation[0], orientation[1], orientation[2], orientation[3]),
              matrix_transform['y']: (orientation[4], orientation[5], orientation[6], orientation[7]),
              matrix_transform['z']: (orientation[8], orientation[9], orientation[10], orientation[11])}
@@ -228,14 +229,21 @@ class CoPylot(QWidget):
         cad_model.setTransform(map_orientation)
         self.plot.addItem(cad_model)
 
-    def remove_cad_models(self):
-        """Convenience function to remove cad models usually for visability of other objects"""
+    def remove_cad_model(self, name:str):
+        """Remove cad model from widget"""
+
+        self.plot.removeItem(self._cad_models[name][0])
+        del self._cad_models[name]
+
+
+    def remove_models_from_plot(self):
+        """Convenience function to remove cad models from plot usually for visibility of other objects"""
 
         for model in self._cad_models.values():
             self.plot.removeItem(model[0])
 
-    def add_cad_models(self):
-        """Convenience function to remove cad models usually for visability of other objects"""
+    def add_models_to_plot(self):
+        """Convenience function to add cad models back into plot usually for visibility of other objects"""
 
         for model in self._cad_models.values():
             self.plot.addItem(model[0])
