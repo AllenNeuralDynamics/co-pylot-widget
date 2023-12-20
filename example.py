@@ -1,4 +1,4 @@
-from stagemap_widget.stagemap import StageMap
+from copylot_widget.copylot import StageMap
 import sys
 from qtpy.QtWidgets import QApplication
 import random
@@ -42,8 +42,17 @@ stagemap = StageMap(stage_position_um,
                  limits_um,
                  fov_um,
                  tile_overlap_pct,)
-                # r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-holder.STL',
-                # r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-tissue-map.STL')
+
+stagemap.add_cad_model('mount', r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-holder.STL',
+                       (1, 0, 0, (abs(stagemap.limits_um['x'][1])-abs(stagemap.limits_um['x'][0]))/2,
+                        0, 1, 0, 'y',
+                        0, 0, 1, (abs(stagemap.limits_um['z'][1])-abs(stagemap.limits_um['z'][0]))/2,
+                        0, 0, 0, 1))
+stagemap.add_cad_model('objectives', r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-tissue-map.STL',
+                       (1, 0, 0, 'x',
+                        0, 1, 0, stagemap.limits_um['y'][1],
+                        0, 0, 1, 'z',
+                        0, 0, 0, 1))
 x = randomwalk1D(stagemap.stage_position_um['x'], 100)
 y = randomwalk1D(stagemap.stage_position_um['y'], 100)
 z = randomwalk1D(stagemap.stage_position_um['z'], 100)

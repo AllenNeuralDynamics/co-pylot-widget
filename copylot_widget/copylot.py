@@ -3,14 +3,16 @@ from qtpy.QtWidgets import QWidget, QVBoxLayout, QCheckBox
 import pyqtgraph.opengl as gl
 import inspect
 from time import time
-from stagemap_widget.signalchangevar import SignalChangeVar
+from copylot_widget.signalchangevar import SignalChangeVar
 from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
 import qtpy.QtGui
 import stl
 from math import ceil
+from sympy import symbols
+from sympy.parsing.sympy_parser import parse_expr
 
-class StageMap(QWidget):
+class CoPylot(QWidget):
     stage_position_um = SignalChangeVar()
     scanning_volume_um = SignalChangeVar()
     limits_um = SignalChangeVar()
@@ -23,9 +25,7 @@ class StageMap(QWidget):
                  scanning_volume_um: dict,
                  limits_um: dict,
                  fov_um: dict,
-                 tile_overlap_pct: dict,
-                 mount_stl_file: str = '',
-                 objective_stl_file: str = ''):
+                 tile_overlap_pct: dict):
         """Widget to visualize current stage position, imaging volume, tiles ect. in relation to stage hardware
          :param stage_position_um: position of stage in stage coordinate system e.g. {x:10, y:10, z:10}
          :param coordinate_transform: how stage coordinates translate to the GLViewWidget corrdinate system.
@@ -36,8 +36,6 @@ class StageMap(QWidget):
          e.g. {x:[-100, 100], y:[-100, 100], z:[-100, 100]
          :param fov_um: Size of camera fov in stage coordinate system to correctly draw on map e.g. {x:2304, y:1152}
          :param tile_overlap_pct: Defines how much overlap between tiles in stage coordinate system e.g. {x:15, y:15},
-         :param mount_stl_file: optional string where the stl file of the stage mount is located.
-         :param objective_stl_file: optional string where the stl file for the objectives is located
           """
         super().__init__()
 
@@ -47,12 +45,11 @@ class StageMap(QWidget):
         self.limits_um = limits_um
         self.fov_um = fov_um
         self.tile_overlap_pct = tile_overlap_pct
-        self.mount_stl_file = mount_stl_file
-        self.objective_stl_file = objective_stl_file
-
+        self._cad_models = {}
 
         self.tiles = []
 
+        #TODO: Add checks so fov and tile overlap have same values
 
         # Trigger the update of map when SignalChangeVar variable has changed
         self.valueChanged[int].connect(self.update_map)
@@ -172,11 +169,76 @@ class StageMap(QWidget):
                     box.setSize(**tile_volume)
                     self.tiles.append(box)
                     self.tiles[-1].setColor(qtpy.QtGui.QColor('cornflowerblue'))
-                    #self.plot.removeItem(self.objectives)
+                    # Remove and add back cad models to see tiles through models
+                    self.remove_cad_models()
                     self.plot.addItem(self.tiles[-1])
-                    #self.plot.addItem(self.objectives)  # remove and add objectives to see tiles through objective
+                    self.add_cad_models()
+
                     # self.tiles.append(gl.GLTextItem(pos=num_pos, text=str((self.xtiles*y)+x), font=qtpy.QtGui.QFont('Helvetica', 15)))
                     # self.plot.addItem(self.tiles[-1])       # Can't draw text while moving graph
+
+
+
+    def add_cad_model(self, name: str, path:str, orientation:qtpy.QtGui.QMatrix4x4):
+        """Add cad model and set proper orientation
+        :param path: the path of the stl file
+        :param  orientation: the QMatrix 4x4 that dictate how stl will move within the map. To specify movement with
+        the stage position, use the desired axis. Orientation should be in stage coordinates and will be transformed
+        accordingly e. g.  (1, 0, 0, 'x',
+                            0, 1, 0, 'y',
+                            0, 0, 1, 'z',
+                            0, 0, 0, 1) for model whose origin moves with stage position """
+
+        # (1, 0, 0, 'x**2',
+        #  0, 1, 0, 'sine(y)',
+        #  0, 0, 1, 'z',
+        #  0, 0, 0, 1)
+
+        # Load in stl file
+        stl_mesh = stl.mesh.Mesh.from_file(path)
+        points = stl_mesh.points.reshape(-1, 3)
+        faces = np.arange(points.shape[0]).reshape(-1, 3)
+        cad_model = gl.GLMeshItem(meshdata=gl.MeshData(vertexes=points, faces=faces),
+                                        smooth=True, drawFaces=True, drawEdges=False, color=(0.5, 0.5, 0.5, 0.5),
+                                        shader='edgeHilight', glOptions='translucent')
+        self._cad_models[name] = [cad_model, orientation]
+
+        x, y, z = symbols('x y z')
+        orientation = list(orientation)
+        for i in range(3, 12, 4):    # Go through coordinates
+            if type(orientation[i]) == str:
+                if 'x' in orientation[i] or 'y' in orientation[i] or 'z' in orientation[i]:
+                    fun = parse_expr(orientation[i])
+                    value = fun.subs([(x, self.stage_position_um['x']),
+                                      (y, self.stage_position_um['y']),
+                                      (z, self.stage_position_um['z'])])
+                    orientation[i] = value
+
+        # Create orientation matrix
+        matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
+        m = {matrix_transform['x']: (orientation[0], orientation[1], orientation[2], orientation[3]),
+             matrix_transform['y']: (orientation[4], orientation[5], orientation[6], orientation[7]),
+             matrix_transform['z']: (orientation[8], orientation[9], orientation[10], orientation[11])}
+
+        map_orientation = qtpy.QtGui.QMatrix4x4(m['x'][0], m['x'][1], m['x'][2], m['x'][3],
+                                                m['y'][0], m['y'][1], m['y'][2], m['y'][3],
+                                                m['z'][0], m['z'][1], m['z'][2], m['z'][3],
+                                                0, 0, 0, 1)
+
+        cad_model.setTransform(map_orientation)
+        self.plot.addItem(cad_model)
+
+    def remove_cad_models(self):
+        """Convenience function to remove cad models usually for visability of other objects"""
+
+        for model in self._cad_models.values():
+            self.plot.removeItem(model[0])
+
+    def add_cad_models(self):
+        """Convenience function to remove cad models usually for visability of other objects"""
+
+        for model in self._cad_models.values():
+            self.plot.addItem(model[0])
 
     def create_map(self):
         """Create GLViewWidget and upload position, scan area, and cad models into view"""
@@ -194,33 +256,12 @@ class StageMap(QWidget):
         self.pos.setColor(qtpy.QtGui.QColor('red'))
         plot.addItem(self.pos)
 
-        try:
-            objectives = stl.mesh.Mesh.from_file(self.objective_stl_file)
-            points = objectives.points.reshape(-1, 3)
-            faces = np.arange(points.shape[0]).reshape(-1, 3)
-            self.objectives = gl.GLMeshItem(meshdata= gl.MeshData(vertexes=points, faces=faces),
-                                            smooth=True, drawFaces=True, drawEdges=False, color=(0.5, 0.5, 0.5, 0.5),
-                                            shader='edgeHilight', glOptions='translucent')
-
-            mount = stl.mesh.Mesh.from_file(self.mount_stl_file)
-            points = mount.points.reshape(-1, 3)
-            faces = np.arange(points.shape[0]).reshape(-1, 3)
-            self.mount = gl.GLMeshItem(meshdata=gl.MeshData(vertexes=points, faces=faces), smooth=True, drawFaces=True,
-                                       drawEdges=False, color=(0.5, 0.5, 0.5, 0.5),shader='edgeHilight',
-                                       glOptions='translucent')
-            plot.addItem(self.objectives)
-            plot.addItem(self.mount)
-
-        except FileNotFoundError:
-            # Create self.objectives and self.mount objects but don't add them to graph
-            self.objectives = gl.GLBoxItem()
-            self.mount = gl.GLBoxItem()
-
         return plot
 
     @Slot(int)
     def update_map(self, *args):
         """Update map with new values of key values"""
+
         shifted_pos = {k: v - (.5 * self.fov_um.get(k, 0)) for k, v in self.stage_position_um.items()}
 
         self.pos.setSize(self.fov_um.get('x', 0), self.fov_um.get('y', 0), self.fov_um.get('z', 0))
@@ -234,19 +275,31 @@ class StageMap(QWidget):
                                                          0, 0, 1, shifted_pos['z'],
                                                          0, 0, 0, 1))
         matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
-        m = {matrix_transform['x']:(1,0,0),
-             matrix_transform['y']:(0,1,0),
-             matrix_transform['z']:(0,0,1)}
-        self.objectives.setTransform(qtpy.QtGui.QMatrix4x4(m['x'][0], m['x'][1], m['x'][2], self.stage_position_um['x'],
-                                                           m['y'][0], m['y'][1], m['y'][2], self.stage_position_um['y'],
-                                                           m['z'][0], m['z'][1], m['z'][2], self.limits_um['z'][1],
-                                                           0, 0, 0, 1))
-        self.mount.setTransform(qtpy.QtGui.QMatrix4x4(m['x'][0], m['x'][1], m['x'][2], (abs(self.limits_um['x'][1])-
-                                                                                        abs(self.limits_um['x'][0]))/2,
-                                                      m['y'][0], m['y'][1], m['y'][2], (abs(self.limits_um['y'][1])-
-                                                                                        abs(self.limits_um['y'][0]))/2,
-                                                      m['z'][0], m['z'][1], m['z'][2], self.stage_position_um['z'],
-                                                      0, 0, 0, 1))
+
+        for model in self._cad_models.values():
+            x, y, z = symbols('x y z')
+            orientation = list(model[1])
+            for i in range(3, 12, 4):  # Go through coordinates
+                if type(orientation[i]) == str:
+                    if 'x' in orientation[i] or 'y' in orientation[i] or 'z' in orientation[i]:
+
+                        fun = parse_expr(orientation[i])
+                        value = fun.subs([(x, self.stage_position_um[matrix_transform['x']]),
+                                          (y, self.stage_position_um[matrix_transform['y']]),
+                                          (z, self.stage_position_um[matrix_transform['z']])])
+                        orientation[i] = value
+
+            # Create orientation matrix
+            matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
+            m = {matrix_transform['x']: (orientation[0], orientation[1], orientation[2], orientation[3]),
+                 matrix_transform['y']: (orientation[4], orientation[5], orientation[6], orientation[7]),
+                 matrix_transform['z']: (orientation[8], orientation[9], orientation[10], orientation[11])}
+            map_orientation = qtpy.QtGui.QMatrix4x4(m['x'][0], m['x'][1], m['x'][2], m['x'][3],
+                                                    m['y'][0], m['y'][1], m['y'][2], m['y'][3],
+                                                    m['z'][0], m['z'][1], m['z'][2], m['z'][3],
+                                                    0, 0, 0, 1)
+            model[0].setTransform(map_orientation)
+
         if self.tiling_widget.isChecked():
             self.draw_tiles()
 
