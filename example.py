@@ -1,10 +1,17 @@
-
 from co_pylot_widget.copylot import CoPylot
 import sys
 from qtpy.QtWidgets import QApplication
 import random
 from time import sleep
 import threading
+from pathlib import Path
+import os
+
+RESOURCES_DIR = (
+    Path(os.path.dirname(os.path.realpath(__file__))) / "resources"
+)
+EXAMPLE_OBJECTIVE = RESOURCES_DIR / "di-spim-tissue-map.STL"
+EXAMPLE_MOUNT = RESOURCES_DIR / "di-spim-holder.STL"
 
 def randomwalk1D(start_num, n):
     x = start_num
@@ -49,12 +56,12 @@ stagemap = CoPylot(stage_position_um,
                  fov_um,
                  tile_overlap_pct,)
 
-stagemap.add_cad_model('mount', r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-holder.STL',
+stagemap.add_cad_model('mount', EXAMPLE_MOUNT,
                        (1, 0, 0, (abs(stagemap.limits_um['x'][1])-abs(stagemap.limits_um['x'][0]))/2,
                         0, 1, 0, 'y',
                         0, 0, 1, (abs(stagemap.limits_um['z'][1])-abs(stagemap.limits_um['z'][0]))/2,
                         0, 0, 0, 1))
-stagemap.add_cad_model('objectives', r'C:\Users\micah.woodard\Downloads\dispim_files\di-spim-tissue-map.STL',
+stagemap.add_cad_model('objectives', EXAMPLE_OBJECTIVE,
                        (1, 0, 0, 'x',
                         0, 1, 0, stagemap.limits_um['y'][1],
                         0, 0, 1, 'z',
