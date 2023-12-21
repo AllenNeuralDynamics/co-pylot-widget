@@ -1,5 +1,5 @@
 from qtpy.QtCore import Qt, Signal, Slot
-from qtpy.QtWidgets import QWidget, QVBoxLayout, QCheckBox
+from qtpy.QtWidgets import QWidget, QVBoxLayout, QCheckBox, QComboBox, QPushButton, QLineEdit, QHBoxLayout
 import pyqtgraph.opengl as gl
 import inspect
 from time import time
@@ -12,44 +12,45 @@ from math import ceil
 from sympy import symbols
 from sympy.parsing.sympy_parser import parse_expr
 
+
 class CoPylot(QWidget):
-    stage_position_um = SignalChangeVar()
-    scanning_volume_um = SignalChangeVar()
-    limits_um = SignalChangeVar()
-    fov_um = SignalChangeVar()
+    stage_position = SignalChangeVar()
+    scanning_volume = SignalChangeVar()
+    limits = SignalChangeVar()
+    fov = SignalChangeVar()
     tile_overlap_pct = SignalChangeVar()
     valueChanged = Signal((int,))
 
-    def __init__(self, stage_position_um: dict,
+    def __init__(self, stage_position: dict,
                  coordinate_transformation_map: dict,
-                 scanning_volume_um: dict,
-                 limits_um: dict,
-                 fov_um: dict,
+                 scanning_volume: dict,
+                 limits: dict,
+                 fov: dict,
                  tile_overlap_pct: dict):
         """Widget to visualize current stage position, imaging volume, tiles ect. in relation to stage hardware
-         :param stage_position_um: position of stage in stage coordinate system e.g. {x:10, y:10, z:10}
+         :param stage_position: position of stage in stage coordinate system e.g. {x:10, y:10, z:10}
          :param coordinate_transform: how stage coordinates translate to the GLViewWidget corrdinate system.
          Should be in format of GLWidget to stage coordinate mapping e.g. {x:-y, y:z, z:x}.
-         :param scanning_volume_um: volume of scan in stage coordinate system e.g. {x:110, y:60, z:200}
-         :param limits_um: limits of the stage travel used for centering the stl files.
+         :param scanning_volume: volume of scan in stage coordinate system e.g. {x:110, y:60, z:200}
+         :param limits: limits of the stage travel used for centering the stl files.
          Limits should be a dictionary of lower and upper limits tuple for each direction
          e.g. {x:[-100, 100], y:[-100, 100], z:[-100, 100]
-         :param fov_um: Size of camera fov in stage coordinate system to correctly draw on map e.g. {x:2304, y:1152}
+         :param fov: Size of camera fov in stage coordinate system to correctly draw on map e.g. {x:2304, y:1152}
          :param tile_overlap_pct: Defines how much overlap between tiles in stage coordinate system e.g. {x:15, y:15},
           """
         super().__init__()
 
         self._set_coordinate_transformation_map(coordinate_transformation_map)
-        self.stage_position_um = stage_position_um
-        self.scanning_volume_um = scanning_volume_um
-        self.limits_um = limits_um
-        self.fov_um = fov_um
+        self.stage_position = stage_position
+        self.scanning_volume = scanning_volume
+        self.limits = limits
+        self.fov = fov
         self.tile_overlap_pct = tile_overlap_pct
         self._cad_models = {}
 
         self.tiles = []
 
-        #TODO: Add checks so fov and tile overlap have same values
+        # TODO: Add checks so fov and tile overlap have same values
 
         # Trigger the update of map when SignalChangeVar variable has changed
         self.valueChanged[int].connect(self.update_map)
@@ -57,11 +58,10 @@ class CoPylot(QWidget):
         # Create map
         self.plot = self.create_map()
         self.tiling_widget = self.create_tiling_widget()
+        self.add_point_widget = self.create_point_widget()
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.plot)
-        layout.addWidget(self.tiling_widget)
-        self.setLayout(layout)
+        widget = self.create_laid_out_widget('V', plot=self.plot, tile=self.tiling_widget, point=self.add_point_widget)
+        self.setLayout(widget.layout())
         self.update_map()
         self.show()
 
@@ -76,11 +76,11 @@ class CoPylot(QWidget):
         except AttributeError:
             pass
         self._coordinate_transformation_map = value
-        self.valueChanged.emit(0)   # Trigger update of map if coordinate transform changed
+        self.valueChanged.emit(0)  # Trigger update of map if coordinate transform changed
 
-    def transform_variables(self):  #TODO: better name and description
+    def transform_variables(self):  # TODO: better name and description
         """When new coordiante_transformation_map is given, update variables"""
-        variables = ['stage_position_um', 'scanning_volume_um', 'limits_um', 'fov_um', 'tile_overlap_pct']
+        variables = ['stage_position', 'scanning_volume', 'limits', 'fov', 'tile_overlap_pct']
         for value in variables:
             stage_coords = self.map_to_stage_coord_transform(getattr(self, value))
             setattr(self, value, stage_coords)
@@ -99,7 +99,7 @@ class CoPylot(QWidget):
             if v.lstrip('-') in values.keys():
                 polarity = -1 if '-' in v else 1
                 remap_values[k] = [i * polarity for i in values[v.lstrip('-')]] if type(values[v.lstrip('-')]) is list \
-                    else polarity*values[v.lstrip('-')]
+                    else polarity * values[v.lstrip('-')]
                 if type(values[v.lstrip('-')]) is list:
                     remap_values[k] = list(np.sort(remap_values[k]))
                 del values[v.lstrip('-')]
@@ -112,9 +112,47 @@ class CoPylot(QWidget):
     def map_to_stage_coord_transform(self, map_values: dict):
         """Remap a dictionary of values from map coordinate system to stage coordinate system"""
 
-        map_to_stage = { v if '-' not in v else v.lstrip('-'):k if '-' not in v else '-' + k
+        map_to_stage = {v if '-' not in v else v.lstrip('-'): k if '-' not in v else '-' + k
                         for k, v in self._coordinate_transformation_map.items()}
         return self.coord_transform(map_to_stage, map_values)
+
+    def create_point_widget(self):
+        """Create widget to add points to graph"""
+
+        self.point_color = QComboBox()
+        self.point_color.addItems(qtpy.QtGui.QColor.colorNames())  # Add all QtGui Colors to drop down box
+
+        mark = QPushButton('Set Point')
+        mark.clicked.connect(self.set_point)  # Add point when button is presses
+
+        self.point_label = QLineEdit()
+        self.point_label.setPlaceholderText('point color')
+        self.point_label.returnPressed.connect(self.set_point)  # Add text when button is pressed
+
+        point_traits = self.create_laid_out_widget('V', color=self.point_color, label=self.point_label)
+        point_widget = self.create_laid_out_widget('H', button=mark, traits=point_traits)
+        point_widget.setMaximumSize(500, 100)
+        return point_widget
+
+    def set_point(self):
+
+        """Set current position as point on graph"""
+
+        # Remap sample_pos to gui coords and convert 1/10um to mm
+
+        hue = qtpy.QtGui.QColor(self.point_color.currentText())  # Color of point determined by drop down box
+        point = gl.GLScatterPlotItem(pos=list(self.stage_position.values()),
+                                     size=.35,
+                                     color=hue,
+                                     pxMode=False)
+        info = self.point_label.text()  # Text comes from textbox
+        info_point = gl.GLTextItem(pos=list(self.stage_position.values()),
+                                   text=info,
+                                   font=qtpy.QtGui.QFont('Helvetica', 15))
+        self.plot.addItem(info_point)  # Add items to plot
+        self.plot.addItem(point)
+
+        self.point_label.clear()  # Clear text box
 
     def create_tiling_widget(self):
         """Create checkbox widget to turn on and off tiling"""
@@ -147,24 +185,25 @@ class CoPylot(QWidget):
                 self.plot.removeItem(item)
         self.tiles.clear()
 
-        grid_step_um = {k:(1 - abs(self.tile_overlap_pct.get(k, 0)) / 100.0) * self.fov_um.get(k, 1) for k in ['x','y','z']}
-        steps = {k:1+ceil((self.scanning_volume_um[k] - self.fov_um.get(k, self.scanning_volume_um[k]))/
-                          grid_step_um[k]) for k in ['x','y','z']}
+        grid_step = {k: (1 - abs(self.tile_overlap_pct.get(k, 0)) / 100.0) * self.fov.get(k, 1) for k in
+                     ['x', 'y', 'z']}
+        steps = {k: 1 + ceil((self.scanning_volume[k] - self.fov.get(k, self.scanning_volume[k])) /
+                             grid_step[k]) for k in ['x', 'y', 'z']}
 
-        steps_order_axes = sorted(steps.keys()) # alphabetical list of keys
-        for x in range(steps[steps_order_axes[0]]): # refers to x axis
-            for y in range(steps[steps_order_axes[1]]): # refers to y axis
-                for z in range(steps[steps_order_axes[2]]): # refers to z axis
-                    current_tile = {'x':x, 'y':y, 'z':z}
-                    tile_offset = {k:(axis * grid_step_um[k]) - (.5 * self.fov_um.get(k, 0))
+        steps_order_axes = sorted(steps.keys())  # alphabetical list of keys
+        for x in range(steps[steps_order_axes[0]]):  # refers to x axis
+            for y in range(steps[steps_order_axes[1]]):  # refers to y axis
+                for z in range(steps[steps_order_axes[2]]):  # refers to z axis
+                    current_tile = {'x': x, 'y': y, 'z': z}
+                    tile_offset = {k: (axis * grid_step[k]) - (.5 * self.fov.get(k, 0))
                                    for k, axis in current_tile.items()}
-                    tile_pos = {k:v+self.stage_position_um[k] for k, v in tile_offset.items()}
+                    tile_pos = {k: v + self.stage_position[k] for k, v in tile_offset.items()}
 
                     # num_pos = [tile_pos['x'],
-                    #            tile_pos['y'] + (.5 * 0.001 * (self.cfg.tile_specs['y_field_of_view_um'])),
-                    #            tile_pos['z'] - (.5 * 0.001 * (self.cfg.tile_specs['x_field_of_view_um']))]
+                    #            tile_pos['y'] + (.5 * 0.001 * (self.cfg.tile_specs['y_field_of_view'])),
+                    #            tile_pos['z'] - (.5 * 0.001 * (self.cfg.tile_specs['x_field_of_view']))]
 
-                    tile_volume = {k:self.fov_um.get(k, self.scanning_volume_um[k]) for k in ['x','y','z']}
+                    tile_volume = {k: self.fov.get(k, self.scanning_volume[k]) for k in ['x', 'y', 'z']}
                     box = gl.GLBoxItem()  # Representing scan volume
                     box.translate(tile_pos['x'], tile_pos['y'], tile_pos['z'])
                     box.setSize(**tile_volume)
@@ -178,9 +217,7 @@ class CoPylot(QWidget):
                     # self.tiles.append(gl.GLTextItem(pos=num_pos, text=str((self.xtiles*y)+x), font=qtpy.QtGui.QFont('Helvetica', 15)))
                     # self.plot.addItem(self.tiles[-1])       # Can't draw text while moving graph
 
-
-
-    def add_cad_model(self, name: str, path:str, orientation:qtpy.QtGui.QMatrix4x4):
+    def add_cad_model(self, name: str, path: str, orientation: qtpy.QtGui.QMatrix4x4):
         """Add cad model and set proper orientation
         :param path: the path of the stl file
         :param  orientation: the QMatrix 4x4 that dictate how stl will move within the map. To specify movement with
@@ -200,21 +237,21 @@ class CoPylot(QWidget):
         points = stl_mesh.points.reshape(-1, 3)
         faces = np.arange(points.shape[0]).reshape(-1, 3)
         cad_model = gl.GLMeshItem(meshdata=gl.MeshData(vertexes=points, faces=faces),
-                                        smooth=True, drawFaces=True, drawEdges=False, color=(0.5, 0.5, 0.5, 0.5),
-                                        shader='edgeHilight', glOptions='translucent')
+                                  smooth=True, drawFaces=True, drawEdges=False, color=(0.5, 0.5, 0.5, 0.5),
+                                  shader='edgeHilight', glOptions='translucent')
         self._cad_models[name] = [cad_model, orientation]
 
         # Create orientation matrix
         matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
         x, y, z = symbols('x y z')
         orientation = list(orientation)
-        for i in range(3, 12, 4):    # Go through coordinates
+        for i in range(3, 12, 4):  # Go through coordinates
             if type(orientation[i]) == str:
                 if 'x' in orientation[i] or 'y' in orientation[i] or 'z' in orientation[i]:
                     fun = parse_expr(orientation[i])
-                    value = fun.subs([(x, self.stage_position_um[matrix_transform['x']]),
-                                      (y, self.stage_position_um[matrix_transform['y']]),
-                                      (z, self.stage_position_um[matrix_transform['z']])])
+                    value = fun.subs([(x, self.stage_position[matrix_transform['x']]),
+                                      (y, self.stage_position[matrix_transform['y']]),
+                                      (z, self.stage_position[matrix_transform['z']])])
                     orientation[i] = value
 
         m = {matrix_transform['x']: (orientation[0], orientation[1], orientation[2], orientation[3]),
@@ -229,12 +266,11 @@ class CoPylot(QWidget):
         cad_model.setTransform(map_orientation)
         self.plot.addItem(cad_model)
 
-    def remove_cad_model(self, name:str):
+    def remove_cad_model(self, name: str):
         """Remove cad model from widget"""
 
         self.plot.removeItem(self._cad_models[name][0])
         del self._cad_models[name]
-
 
     def remove_models_from_plot(self):
         """Convenience function to remove cad models from plot usually for visibility of other objects"""
@@ -252,10 +288,10 @@ class CoPylot(QWidget):
         """Create GLViewWidget and upload position, scan area, and cad models into view"""
 
         plot = gl.GLViewWidget()
-        plot.opts['distance'] = 500 # TODO: Distance should be scaled to scan volume size and size of objectives/mount
-        plot.opts['center'] = QtGui.QVector3D(self.stage_position_um['x'],
-                                              self.stage_position_um['y'],
-                                              self.stage_position_um['z'])
+        plot.opts['distance'] = 500  # TODO: Distance should be scaled to scan volume size and size of objectives/mount
+        plot.opts['center'] = QtGui.QVector3D(self.stage_position['x'],
+                                              self.stage_position['y'],
+                                              self.stage_position['z'])
         self.scan_vol = gl.GLBoxItem()
         self.scan_vol.setColor(qtpy.QtGui.QColor('gold'))
         plot.addItem(self.scan_vol)
@@ -270,14 +306,14 @@ class CoPylot(QWidget):
     def update_map(self, *args):
         """Update map with new values of key values"""
 
-        shifted_pos = {k: v - (.5 * self.fov_um.get(k, 0)) for k, v in self.stage_position_um.items()}
+        shifted_pos = {k: v - (.5 * self.fov.get(k, 0)) for k, v in self.stage_position.items()}
 
-        self.pos.setSize(self.fov_um.get('x', 0), self.fov_um.get('y', 0), self.fov_um.get('z', 0))
+        self.pos.setSize(self.fov.get('x', 0), self.fov.get('y', 0), self.fov.get('z', 0))
         self.pos.setTransform(qtpy.QtGui.QMatrix4x4(1, 0, 0, shifted_pos['x'],
                                                     0, 1, 0, shifted_pos['y'],
                                                     0, 0, 1, shifted_pos['z'],
                                                     0, 0, 0, 1))
-        self.scan_vol.setSize(**self.scanning_volume_um)
+        self.scan_vol.setSize(**self.scanning_volume)
         self.scan_vol.setTransform(qtpy.QtGui.QMatrix4x4(1, 0, 0, shifted_pos['x'],
                                                          0, 1, 0, shifted_pos['y'],
                                                          0, 0, 1, shifted_pos['z'],
@@ -290,11 +326,10 @@ class CoPylot(QWidget):
             for i in range(3, 12, 4):  # Go through coordinates
                 if type(orientation[i]) == str:
                     if 'x' in orientation[i] or 'y' in orientation[i] or 'z' in orientation[i]:
-
                         fun = parse_expr(orientation[i])
-                        value = fun.subs([(x, self.stage_position_um[matrix_transform['x']]),
-                                          (y, self.stage_position_um[matrix_transform['y']]),
-                                          (z, self.stage_position_um[matrix_transform['z']])])
+                        value = fun.subs([(x, self.stage_position[matrix_transform['x']]),
+                                          (y, self.stage_position[matrix_transform['y']]),
+                                          (z, self.stage_position[matrix_transform['z']])])
                         orientation[i] = value
 
             # Create orientation matrix
@@ -311,6 +346,34 @@ class CoPylot(QWidget):
         if self.tiling_widget.isChecked():
             self.draw_tiles()
 
+    def create_laid_out_widget(self, struct: str, **kwargs):
+        """Creates either a horizontal or vertical layout populated with widgets
+        :param struct: specifies whether the layout will be horizontal, vertical, or combo
+        :param kwargs: all widgets contained in layout"""
+
+        layouts = {'H': QHBoxLayout(), 'V': QVBoxLayout()}
+        widget = QWidget()
+        if struct == 'V' or struct == 'H':
+            layout = layouts[struct]
+            for arg in kwargs.values():
+                layout.addWidget(arg)
+
+        elif struct == 'VH' or 'HV':
+            bin0 = {}
+            bin1 = {}
+            j = 0
+            for v in kwargs.values():
+                bin0[str(v)] = v
+                j += 1
+                if j == 2:
+                    j = 0
+                    bin1[str(v)] = self.create_laid_out_widget(struct=struct[0], **bin0)
+                    bin0 = {}
+            return self.create_laid_out_widget(struct=struct[1], **bin1)
+
+        layout.setContentsMargins(0, 0, 0, 0)
+        widget.setLayout(layout)
+        return widget
+
     coordinate_transformation_map = property(fget=_get_coordinate_transformation_map,
                                              fset=_set_coordinate_transformation_map)
-

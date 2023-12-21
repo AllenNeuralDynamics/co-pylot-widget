@@ -27,10 +27,10 @@ def stagewalk(x, y, z):
     for i in range(0, 100):
         if i == 25:
             print('changing scanning volume')
-            stagemap.scanning_volume_um = {'x':400, 'y':50, 'z':150}
+            stagemap.scanning_volume = {'x':400, 'y':50, 'z':150}
         if i == 50:
             print('changing fov')
-            stagemap.fov_um = {'x': 50, 'y':50}
+            stagemap.fov = {'x': 50, 'y':50}
         if i ==75:
             print('changing coordinate transform')
             stagemap.coordinate_transformation_map = {'x': 'y', 'y': 'z', 'z': '-x'}
@@ -38,37 +38,37 @@ def stagewalk(x, y, z):
             print('Removing objectives')
             stagemap.remove_cad_model('objectives')
 
-        stagemap.stage_position_um = {'x':x[i], 'y':y[i], 'z':z[i]}
+        stagemap.stage_position = {'x':x[i], 'y':y[i], 'z':z[i]}
         sleep(.5)
 
-stage_position_um = {'x':0, 'y':0, 'z':200}
+stage_position = {'x':0, 'y':0, 'z':200}
 coordinate_transformation_map = {'x': 'z', 'y': 'x', 'z': '-y'}
-scanning_volume_um = {'x':50, 'y':50, 'z':50}
-limits_um = {'x':[-100,100], 'y':[-200,200], 'z':[-100,500]}
-fov_um = {'x': 20, 'y':20}
+scanning_volume = {'x':50, 'y':50, 'z':50}
+limits = {'x':[-100, 100], 'y':[-200, 200], 'z':[-100, 500]}
+fov = {'x': 20, 'y':20}
 tile_overlap_pct = {'x': 20, 'y':20}
 
 app = QApplication(sys.argv)
-stagemap = CoPylot(stage_position_um,
-                 coordinate_transformation_map,
-                 scanning_volume_um,
-                 limits_um,
-                 fov_um,
-                 tile_overlap_pct,)
+stagemap = CoPylot(stage_position,
+                   coordinate_transformation_map,
+                   scanning_volume,
+                   limits,
+                   fov,
+                   tile_overlap_pct, )
 
 stagemap.add_cad_model('mount', EXAMPLE_MOUNT,
-                       (1, 0, 0, (abs(stagemap.limits_um['x'][1])-abs(stagemap.limits_um['x'][0]))/2,
+                       (1, 0, 0, (abs(stagemap.limits['x'][1]) - abs(stagemap.limits['x'][0])) / 2,
                         0, 1, 0, 'y',
-                        0, 0, 1, (abs(stagemap.limits_um['z'][1])-abs(stagemap.limits_um['z'][0]))/2,
+                        0, 0, 1, (abs(stagemap.limits['z'][1]) - abs(stagemap.limits['z'][0])) / 2,
                         0, 0, 0, 1))
 stagemap.add_cad_model('objectives', EXAMPLE_OBJECTIVE,
                        (1, 0, 0, 'x',
-                        0, 1, 0, stagemap.limits_um['y'][1],
+                        0, 1, 0, stagemap.limits['y'][1],
                         0, 0, 1, 'z',
                         0, 0, 0, 1))
-x = randomwalk1D(stagemap.stage_position_um['x'], 100)
-y = randomwalk1D(stagemap.stage_position_um['y'], 100)
-z = randomwalk1D(stagemap.stage_position_um['z'], 100)
+x = randomwalk1D(stagemap.stage_position['x'], 100)
+y = randomwalk1D(stagemap.stage_position['y'], 100)
+z = randomwalk1D(stagemap.stage_position['z'], 100)
 t1 = threading.Thread(target=stagewalk, args=(x,y,z))
 t1.start()
 sys.exit(app.exec_())
