@@ -126,7 +126,7 @@ class CoPylot(QWidget):
         mark.clicked.connect(self.set_point)  # Add point when button is presses
 
         self.point_label = QLineEdit()
-        self.point_label.setPlaceholderText('point color')
+        self.point_label.setPlaceholderText('point label')
         self.point_label.returnPressed.connect(self.set_point)  # Add text when button is pressed
 
         point_traits = self.create_laid_out_widget('V', color=self.point_color, label=self.point_label)
@@ -142,7 +142,7 @@ class CoPylot(QWidget):
 
         hue = qtpy.QtGui.QColor(self.point_color.currentText())  # Color of point determined by drop down box
         point = gl.GLScatterPlotItem(pos=list(self.stage_position.values()),
-                                     size=.35,
+                                     size=min([abs(.15*v) for v in self.fov.values()]),
                                      color=hue,
                                      pxMode=False)
         info = self.point_label.text()  # Text comes from textbox
@@ -217,7 +217,7 @@ class CoPylot(QWidget):
                     # self.tiles.append(gl.GLTextItem(pos=num_pos, text=str((self.xtiles*y)+x), font=qtpy.QtGui.QFont('Helvetica', 15)))
                     # self.plot.addItem(self.tiles[-1])       # Can't draw text while moving graph
 
-    def add_cad_model(self, name: str, path: str, orientation: qtpy.QtGui.QMatrix4x4):
+    def add_cad_model(self, name: str, path: str, orientation):
         """Add cad model and set proper orientation
         :param path: the path of the stl file
         :param  orientation: the QMatrix 4x4 that dictate how stl will move within the map. To specify movement with
@@ -227,11 +227,6 @@ class CoPylot(QWidget):
                             0, 0, 1, 'z',
                             0, 0, 0, 1) for model whose origin moves with stage position """
 
-        # (1, 0, 0, 'x**2',
-        #  0, 1, 0, 'sine(y)',
-        #  0, 0, 1, 'z',
-        #  0, 0, 0, 1)
-
         # Load in stl file
         stl_mesh = stl.mesh.Mesh.from_file(path)
         points = stl_mesh.points.reshape(-1, 3)
@@ -239,11 +234,26 @@ class CoPylot(QWidget):
         cad_model = gl.GLMeshItem(meshdata=gl.MeshData(vertexes=points, faces=faces),
                                   smooth=True, drawFaces=True, drawEdges=False, color=(0.5, 0.5, 0.5, 0.5),
                                   shader='edgeHilight', glOptions='translucent')
-        self._cad_models[name] = [cad_model, orientation]
 
         # Create orientation matrix
+        map_orientation = self.model_transform_matrix(orientation)
+
+        cad_model.setTransform(map_orientation)
+        self.plot.addItem(cad_model)
+        self._cad_models[name] = [cad_model,orientation]
+
+    def model_transform_matrix(self, orientation):
+        """Function to create current transform matrix containing x,y,z functions.
+        :param orientation: orientation QMatrix identifying the transform of model in stage coord sys e.g.
+                                                                                        (1, 0, 0, 'x**2',
+                                                                                         0, 1, 0, 'sine(y)',
+                                                                                         0, 0, 1, 'z',
+                                                                                         0, 0, 0, 1)"""
         matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
-        x, y, z = symbols('x y z')
+        m = {matrix_transform[k]: orientation[i:i + 4] for k, i in zip(['x', 'y', 'z'], range(0, 13, 4))}
+        orientation = [*m['x'], *m['y'], *m['z'], 0, 0, 0, 1]
+
+        x, y, z = symbols('x y z')  # symbols are still in stage coordinates
         orientation = list(orientation)
         for i in range(3, 12, 4):  # Go through coordinates
             if type(orientation[i]) == str:
@@ -254,17 +264,7 @@ class CoPylot(QWidget):
                                       (z, self.stage_position[matrix_transform['z']])])
                     orientation[i] = value
 
-        m = {matrix_transform['x']: (orientation[0], orientation[1], orientation[2], orientation[3]),
-             matrix_transform['y']: (orientation[4], orientation[5], orientation[6], orientation[7]),
-             matrix_transform['z']: (orientation[8], orientation[9], orientation[10], orientation[11])}
-
-        map_orientation = qtpy.QtGui.QMatrix4x4(m['x'][0], m['x'][1], m['x'][2], m['x'][3],
-                                                m['y'][0], m['y'][1], m['y'][2], m['y'][3],
-                                                m['z'][0], m['z'][1], m['z'][2], m['z'][3],
-                                                0, 0, 0, 1)
-
-        cad_model.setTransform(map_orientation)
-        self.plot.addItem(cad_model)
+        return qtpy.QtGui.QMatrix4x4(orientation)
 
     def remove_cad_model(self, name: str):
         """Remove cad model from widget"""
@@ -318,29 +318,9 @@ class CoPylot(QWidget):
                                                          0, 1, 0, shifted_pos['y'],
                                                          0, 0, 1, shifted_pos['z'],
                                                          0, 0, 0, 1))
-        matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
 
-        for model in self._cad_models.values():
-            x, y, z = symbols('x y z')
-            orientation = list(model[1])
-            for i in range(3, 12, 4):  # Go through coordinates
-                if type(orientation[i]) == str:
-                    if 'x' in orientation[i] or 'y' in orientation[i] or 'z' in orientation[i]:
-                        fun = parse_expr(orientation[i])
-                        value = fun.subs([(x, self.stage_position[matrix_transform['x']]),
-                                          (y, self.stage_position[matrix_transform['y']]),
-                                          (z, self.stage_position[matrix_transform['z']])])
-                        orientation[i] = value
-
-            # Create orientation matrix
-            matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
-            m = {matrix_transform['x']: (orientation[0], orientation[1], orientation[2], orientation[3]),
-                 matrix_transform['y']: (orientation[4], orientation[5], orientation[6], orientation[7]),
-                 matrix_transform['z']: (orientation[8], orientation[9], orientation[10], orientation[11])}
-            map_orientation = qtpy.QtGui.QMatrix4x4(m['x'][0], m['x'][1], m['x'][2], m['x'][3],
-                                                    m['y'][0], m['y'][1], m['y'][2], m['y'][3],
-                                                    m['z'][0], m['z'][1], m['z'][2], m['z'][3],
-                                                    0, 0, 0, 1)
+        for k, model in self._cad_models.items():
+            map_orientation = self.model_transform_matrix(model[1])
             model[0].setTransform(map_orientation)
 
         if self.tiling_widget.isChecked():
