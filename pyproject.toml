@@ -1,0 +1,19 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "co-pylot-widget"
+authors = [{name = "Micah Woodard", email = "micah.woodard@alleninstitute.org"}]
+version = "1.0.0"
+dynamic = ["description"]
+description-file='README.md'
+dependencies = [
+    'qtpy',
+    'threading',
+    'pathlib',
+    'pyqtgraph',
+    'numpy',
+    'stl',
+    'sympy'
+]

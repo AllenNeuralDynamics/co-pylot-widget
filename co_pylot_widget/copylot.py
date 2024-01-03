@@ -1,10 +1,8 @@
-from qtpy.QtCore import Qt, Signal, Slot
+from qtpy.QtCore import Signal, Slot
 from qtpy.QtWidgets import QWidget, QVBoxLayout, QCheckBox, QComboBox, QPushButton, QLineEdit, QHBoxLayout
 import pyqtgraph.opengl as gl
-import inspect
-from time import time
 from co_pylot_widget.signalchangevar import SignalChangeVar
-from pyqtgraph.Qt import QtCore, QtGui
+from pyqtgraph.Qt import QtGui
 import numpy as np
 import qtpy.QtGui
 import stl
@@ -89,11 +87,6 @@ class CoPylot(QWidget):
     def coord_transform(self, transformation: dict, values: dict):
         """Transform a dictionary of values from one coordinate system to another"""
 
-        possible_axes = [v.lstrip('-') for v in transformation.values()]
-        for k in values.keys():
-            if k not in possible_axes:
-                raise IndexError(f'Axis {k} is not a possible axis based on current '
-                                 f'transformation ({transformation}.')
         remap_values = {}
         for k, v in transformation.items():
             if v.lstrip('-') in values.keys():
@@ -103,7 +96,7 @@ class CoPylot(QWidget):
                 if type(values[v.lstrip('-')]) is list:
                     remap_values[k] = list(np.sort(remap_values[k]))
                 del values[v.lstrip('-')]
-        return remap_values
+        return {**remap_values, **values} # Add back in axes that aren't used in transformation
 
     def stage_to_map_coord_transform(self, stage_values: dict):
         """Remap a dictionary of values from stage coordinate system to map coordinate system"""
@@ -234,7 +227,6 @@ class CoPylot(QWidget):
         cad_model = gl.GLMeshItem(meshdata=gl.MeshData(vertexes=points, faces=faces),
                                   smooth=True, drawFaces=True, drawEdges=False, color=(0.5, 0.5, 0.5, 0.5),
                                   shader='edgeHilight', glOptions='translucent')
-
         # Create orientation matrix
         map_orientation = self.model_transform_matrix(orientation)
 
@@ -246,24 +238,20 @@ class CoPylot(QWidget):
         """Function to create current transform matrix containing x,y,z functions.
         :param orientation: orientation QMatrix identifying the transform of model in stage coord sys e.g.
                                                                                         (1, 0, 0, 'x**2',
-                                                                                         0, 1, 0, 'sine(y)',
+                                                                                         0, 1, 0, 'sin(y)',
                                                                                          0, 0, 1, 'z',
                                                                                          0, 0, 0, 1)"""
         matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
         m = {matrix_transform[k]: orientation[i:i + 4] for k, i in zip(['x', 'y', 'z'], range(0, 13, 4))}
-        orientation = [*m['x'], *m['y'], *m['z'], 0, 0, 0, 1]
+        orientation = [*m['x'], *m['y'], *m['z'], *orientation[12:]]
 
-        x, y, z = symbols('x y z')  # symbols are still in stage coordinates
-        orientation = list(orientation)
-        for i in range(3, 12, 4):  # Go through coordinates
-            if type(orientation[i]) == str:
-                if 'x' in orientation[i] or 'y' in orientation[i] or 'z' in orientation[i]:
-                    fun = parse_expr(orientation[i])
-                    value = fun.subs([(x, self.stage_position[matrix_transform['x']]),
-                                      (y, self.stage_position[matrix_transform['y']]),
-                                      (z, self.stage_position[matrix_transform['z']])])
-                    orientation[i] = value
-
+        map_variable = {**matrix_transform, **{k:k for k in self.stage_position.keys() if k not in matrix_transform.keys()}}
+        variables = symbols(list(self.stage_position.keys()))  # symbols are still in stage coordinates
+        for i, var in enumerate(orientation):  # Go through coordinates
+            if type(var) == str:
+                fun = parse_expr(var)
+                expression = fun.subs([(var, self.stage_position[map_variable[str(var)]]) for var in variables])
+                orientation[i] = expression.evalf()
         return qtpy.QtGui.QMatrix4x4(orientation)
 
     def remove_cad_model(self, name: str):
