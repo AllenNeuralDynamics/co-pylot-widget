@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 import os
 
+
 RESOURCES_DIR = (
     Path(os.path.dirname(os.path.realpath(__file__))) / "resources"
 )
