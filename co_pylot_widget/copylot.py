@@ -76,7 +76,7 @@ class CoPylot(QWidget):
         self._coordinate_transformation_map = value
         self.valueChanged.emit(0)  # Trigger update of map if coordinate transform changed
 
-    def transform_variables(self):  # TODO: better name and description
+    def transform_variables(self):  # TODO: better name and description and make private maybe?
         """When new coordiante_transformation_map is given, update variables"""
         variables = ['stage_position', 'scanning_volume', 'limits', 'fov', 'tile_overlap_pct']
         for value in variables:
@@ -96,6 +96,11 @@ class CoPylot(QWidget):
                 if type(values[v.lstrip('-')]) is list:
                     remap_values[k] = list(np.sort(remap_values[k]))
                 del values[v.lstrip('-')]
+        overlapped_keys = [k for k in values.keys() if k in remap_values.keys()]
+        for overlap in overlapped_keys: # Account for stage axis named x, y, z that does not correlate to map x, y, z
+            values[overlap+'0'] = values[overlap]
+            self._coordinate_transformation_map[overlap+'0'] = overlap
+            del values[overlap]
         return {**remap_values, **values} # Add back in axes that aren't used in transformation
 
     def stage_to_map_coord_transform(self, stage_values: dict):
@@ -133,13 +138,14 @@ class CoPylot(QWidget):
 
         # Remap sample_pos to gui coords and convert 1/10um to mm
 
+        position = [self.stage_position.get('x', 0), self.stage_position.get('y', 0), self.stage_position.get('z', 0)]
         hue = qtpy.QtGui.QColor(self.point_color.currentText())  # Color of point determined by drop down box
-        point = gl.GLScatterPlotItem(pos=list(self.stage_position.values()),
+        point = gl.GLScatterPlotItem(pos=position,
                                      size=min([abs(.15*v) for v in self.fov.values()]),
                                      color=hue,
                                      pxMode=False)
         info = self.point_label.text()  # Text comes from textbox
-        info_point = gl.GLTextItem(pos=list(self.stage_position.values()),
+        info_point = gl.GLTextItem(pos=position,
                                    text=info,
                                    font=qtpy.QtGui.QFont('Helvetica', 15))
         self.plot.addItem(info_point)  # Add items to plot
@@ -180,8 +186,9 @@ class CoPylot(QWidget):
 
         grid_step = {k: (1 - abs(self.tile_overlap_pct.get(k, 0)) / 100.0) * self.fov.get(k, 1) for k in
                      ['x', 'y', 'z']}
-        steps = {k: 1 + ceil((self.scanning_volume[k] - self.fov.get(k, self.scanning_volume[k])) /
-                             grid_step[k]) for k in ['x', 'y', 'z']}
+        steps = {k: 1 + ceil((self.scanning_volume.get(k, 0) - self.fov.get(k, self.scanning_volume.get(k, 0))) /
+                             grid_step.get(k, 0)) for k in ['x', 'y', 'z']}
+
 
         steps_order_axes = sorted(steps.keys())  # alphabetical list of keys
         for x in range(steps[steps_order_axes[0]]):  # refers to x axis
@@ -196,7 +203,7 @@ class CoPylot(QWidget):
                     #            tile_pos['y'] + (.5 * 0.001 * (self.cfg.tile_specs['y_field_of_view'])),
                     #            tile_pos['z'] - (.5 * 0.001 * (self.cfg.tile_specs['x_field_of_view']))]
 
-                    tile_volume = {k: self.fov.get(k, self.scanning_volume[k]) for k in ['x', 'y', 'z']}
+                    tile_volume = {k: self.fov.get(k, self.scanning_volume.get(k, 0)) for k in ['x', 'y', 'z']}
                     box = gl.GLBoxItem()  # Representing scan volume
                     box.translate(tile_pos['x'], tile_pos['y'], tile_pos['z'])
                     box.setSize(**tile_volume)
@@ -241,12 +248,13 @@ class CoPylot(QWidget):
                                                                                          0, 1, 0, 'sin(y)',
                                                                                          0, 0, 1, 'z',
                                                                                          0, 0, 0, 1)"""
-        matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items()}
-        m = {matrix_transform[k]: orientation[i:i + 4] for k, i in zip(['x', 'y', 'z'], range(0, 13, 4))}
+        matrix_transform = {v.lstrip('-'): k for k, v in self._coordinate_transformation_map.items() if '0' not in k}
+        m = {matrix_transform[k]: orientation[i:i + 4] for k, i in zip(sorted(matrix_transform.keys()), range(0, 13, 4))}
         orientation = [*m['x'], *m['y'], *m['z'], *orientation[12:]]
-
         map_variable = {**matrix_transform, **{k:k for k in self.stage_position.keys() if k not in matrix_transform.keys()}}
-        variables = symbols(list(self.stage_position.keys()))  # symbols are still in stage coordinates
+
+        # symbols are still in stage coordinates so include stage and map variables
+        variables = symbols(list(set(self.stage_position.keys()) | set(matrix_transform.keys())))
         for i, var in enumerate(orientation):  # Go through coordinates
             if type(var) == str:
                 fun = parse_expr(var)
@@ -296,12 +304,13 @@ class CoPylot(QWidget):
 
         shifted_pos = {k: v - (.5 * self.fov.get(k, 0)) for k, v in self.stage_position.items()}
 
-        self.pos.setSize(self.fov.get('x', 0), self.fov.get('y', 0), self.fov.get('z', 0))
+        self.pos.setSize(*[self.fov.get(k, 0)for k in ['x', 'y', 'z']])
         self.pos.setTransform(qtpy.QtGui.QMatrix4x4(1, 0, 0, shifted_pos['x'],
                                                     0, 1, 0, shifted_pos['y'],
                                                     0, 0, 1, shifted_pos['z'],
                                                     0, 0, 0, 1))
-        self.scan_vol.setSize(**self.scanning_volume)
+
+        self.scan_vol.setSize(*[self.scanning_volume.get(k, 0)for k in ['x', 'y', 'z']])
         self.scan_vol.setTransform(qtpy.QtGui.QMatrix4x4(1, 0, 0, shifted_pos['x'],
                                                          0, 1, 0, shifted_pos['y'],
                                                          0, 0, 1, shifted_pos['z'],
@@ -310,7 +319,6 @@ class CoPylot(QWidget):
         for k, model in self._cad_models.items():
             map_orientation = self.model_transform_matrix(model[1])
             model[0].setTransform(map_orientation)
-
         if self.tiling_widget.isChecked():
             self.draw_tiles()
 

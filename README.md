@@ -2,7 +2,7 @@
 Widget for visualizing cad rendered components of hardware related to a stage position
 
 This widget was created to help visualize spatial relation between stage and instrument components such as objectives and mounts. 
-The goal of this widget is to be used by as many configurations as possible. 
+The goal of this widget is to be able to used by as many configurations as possible. 
 
 
 ## Installation
@@ -14,7 +14,7 @@ To initialize the co-pylot widget, the stage position, coordinate transform betw
 volume, stage limits,field of view, and tile overlap need to be provided. All input values and widget attributes changed 
 outside co-pylot are expected to be in the stage coordinate system. Co-pylot will handle all coordinate system 
 transformations internally. Additionally, co-pylot will also return attributes queried from outside the widget in stage 
-coordinate system. Users should ideally only consider the coordinate transformation when initializing widget
+coordinate system. Users should ideally only consider the coordinate transformation when initializing widget. 
 
 Stage position can have additional axes not used by the coordinate transformation map e.g. 
 {'x':0, 'y':0, 'z':200, 't':0}. This is necessary when needing to create a transformation matrix that is dependent on a 
@@ -48,10 +48,17 @@ stagemap.coordinate_transformation_map = {'x': 'y', 'y': 'z', 'z': '-x'} # Chang
 To add cad models, call the function add_cad_model with arguments defining the corresponding name, file location,  and 
 4x4 transformation matrix. The transformation matrix can contain static values as well as functions of x, y, and z as 
 well as addition stage axes. The variables refer to the corresponding stage_position so all variables must be defined in 
-the stage_position attribute. Usually, indexes that are functions of position are in the 3rd, 7th, and 11th as these 
-refer to the model's position. However, rotational movement can also be simulated based on a stage axis.
+the stage_position attribute. The models transformation matrix is applied to the model defined origin. Usually, indexes 
+that are functions of position are in the 3rd, 7th, and 11th as these refer to the model's position. However, rotational
+movement can also be simulated based on a stage axis.
 
-Note: previously added models will be opaque when trying to see additionally added models
+The model must be in the same coordinate orientation as the stage. Co-pylot will attempt to correctly transform the 
+model based on the current coordinate transformation map. This may be done incorrectly if the coordinate transformation 
+map contains values other than x, y, z e.g. {'x': 'y', 'y': 'z', 'z': '-t'}. However, adjusting the x, y, and z 
+orientation of the transformation matrix may solve this problem.   
+
+Note: previously added models will be opaque when trying to see additionally added models. For example, you will not be 
+able to see 'weirdmount' when looking through the 'mount' model.
 
 ````python
 # Add model that moves up and down with stage position and is centered within the x and z limits

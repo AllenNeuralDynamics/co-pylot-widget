@@ -77,5 +77,3 @@ t = randomwalk1D(90, 100, 100)
 t1 = threading.Thread(target=stagewalk, args=(x, y, z, t))
 t1.start()
 sys.exit(app.exec_())
-
-
